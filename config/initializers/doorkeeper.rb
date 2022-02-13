@@ -5,29 +5,34 @@ Doorkeeper.configure do
   # Check the list of supported ORMs here: https://github.com/doorkeeper-gem/doorkeeper#orms
   orm :active_record
 
+  # このブロックは、resource owner が認証されているかどうかを確認するために呼び出される
+  # 今回はdeviseを使用しているので https://doorkeeper.gitbook.io/guides/ruby-on-rails/configuration 
+  # を参考に修正。
   # This block will be called to check whether the resource owner is authenticated or not.
   resource_owner_authenticator do
-    raise "Please configure doorkeeper resource_owner_authenticator block located in #{__FILE__}"
-    # Put your resource owner authentication logic here.
-    # Example implementation:
-    #   User.find_by(id: session[:user_id]) || redirect_to(new_user_session_url)
+    current_user || warden.authenticate!(scope: :user)
   end
+
+  # ここではoauth application のへのアクセスを制御できる。
+  # 今回はusersテーブルへadminフラグを追加してadminフラグが立っている場合にのみアクセスできるようにするため
+  # コメントアウト部分を外す。
+  # admin以外のuserがアクセスした場合は 403 Forbidden レスポンスを返す。
 
   # If you didn't skip applications controller from Doorkeeper routes in your application routes.rb
   # file then you need to declare this block in order to restrict access to the web interface for
   # adding oauth authorized applications. In other case it will return 403 Forbidden response
   # every time somebody will try to access the admin web interface.
   #
-  # admin_authenticator do
-  #   # Put your admin authentication logic here.
-  #   # Example implementation:
-  #
-  #   if current_user
-  #     head :forbidden unless current_user.admin?
-  #   else
-  #     redirect_to sign_in_url
-  #   end
-  # end
+  admin_authenticator do
+    # Put your admin authentication logic here.
+    # Example implementation:
+  
+    if current_user
+      head :forbidden unless current_user.admin?
+    else
+      redirect_to sign_in_url
+    end
+  end
 
   # You can use your own model classes if you need to extend (or even override) default
   # Doorkeeper models such as `Application`, `AccessToken` and `AccessGrant.
@@ -90,10 +95,14 @@ Doorkeeper.configure do
   #
   # authorization_code_expires_in 10.minutes
 
+  # access_token_expires_in オプション
+  # アクセストークンの有効期限の設定。
+  # defaultでは2時間。変更する場合はコメントアウトを外して編集する。
+  # 有効期限を無効にする場合は、これを「nil」に設定。 
   # Access token expiration time (default: 2 hours).
   # If you want to disable expiration, set this to `nil`.
   #
-  # access_token_expires_in 2.hours
+  access_token_expires_in 3.hours
 
   # Assign custom TTL for access tokens. Will be used instead of access_token_expires_in
   # option if defined. In case the block returns `nil` value Doorkeeper fallbacks to
@@ -225,12 +234,19 @@ Doorkeeper.configure do
   #
   # enable_application_owner confirmation: false
 
+  # scope, プロバイダのアクセストークンスコープの定義
+  # 詳細については、次のサイトを参照。
+  # https://doorkeeper.gitbook.io/guides/ruby-on-rails/scopes
+  # 今回は 
+  # default_scopes  :public と
+  # optional_scopes :write
+  # を設定。
   # Define access token scopes for your provider
   # For more information go to
   # https://doorkeeper.gitbook.io/guides/ruby-on-rails/scopes
   #
-  # default_scopes  :public
-  # optional_scopes :write, :update
+  default_scopes  :public
+  optional_scopes :write, :update
 
   # Allows to restrict only certain scopes for grant_type.
   # By default, all the scopes will be available for all the grant types.
@@ -241,11 +257,14 @@ Doorkeeper.configure do
   #
   # scopes_by_grant_type password: [:write], client_credentials: [:update]
 
+  # enforce_configured_scopes オプション
+  # 「default_scopes」や「optional_scopes」にない任意スコープでのアプリケーションの作成や更新を禁止する。
+  # (デフォルトでは禁止しない)
   # Forbids creating/updating applications with arbitrary scopes that are
   # not in configuration, i.e. +default_scopes+ or +optional_scopes+.
   # (disabled by default)
   #
-  # enforce_configured_scopes
+  enforce_configured_scopes
 
   # Change the way client credentials are retrieved from the request object.
   # By default it retrieves first from the `HTTP_AUTHORIZATION` header, then
@@ -263,6 +282,14 @@ Doorkeeper.configure do
   #
   # access_token_methods :from_bearer_authorization, :from_access_token_param, :from_bearer_param
 
+  # force_ssl_in_redirect_uri オプション
+  # ネイティブではないリダイレクト用の uris で HTTPS プロトコルを強制的に使用する。
+  # (development環境以外ではデフォルトで有効になっている)
+  # OAuth2 は通信のセキュリティを HTTPS プロトコルに委譲するため、これを有効にしておくのが賢明。
+  # proc, lambda, block などの呼び出し可能なオブジェクトは、条件付きチェックを可能にするために使用できる 
+  # (例えば、localhostへの非SSLリダイレクトを許可するなど)
+  #
+  # 今回は使用するため以下の設定を実施。
   # Forces the usage of the HTTPS protocol in non-native redirect uris (enabled
   # by default in non-development environments). OAuth2 delegates security in
   # communication to the HTTPS protocol so it is wise to keep this enabled.
@@ -271,8 +298,8 @@ Doorkeeper.configure do
   # #call can be used in order to allow conditional checks (to allow non-SSL
   # redirects to localhost for example).
   #
-  # force_ssl_in_redirect_uri !Rails.env.development?
-  #
+  # development, test環境ではSSL以外でも許容し、それ以外はSSLのみ許可します。
+  force_ssl_in_redirect_uri !(Rails.env.development? || Rails.env.test?)
   # force_ssl_in_redirect_uri { |uri| uri.host != 'localhost' }
 
   # Specify what redirect URI's you want to block during Application creation.
@@ -283,6 +310,13 @@ Doorkeeper.configure do
   #
   # forbid_redirect_uri { |uri| uri.scheme.to_s.downcase == 'javascript' }
 
+  # Client Credentials や Resource Owner Password Credentialsのような
+  # URI の無い OAuth グラントフローを使用するように Doorkeeper が設定されている場合に、
+  # アプリケーションに空のリダイレクトURIを設定できるようにする。
+  # デフォルトではオンに設定されており、設定されたグラントの種類をチェックするが
+  # oauth_applicationsテーブルのredirect_uriカラムからNOT NULL制約を手動で削除する必要がある。
+  # この機能を完全に無効にするには allow_blank_redirect_uri false のコメントアウトを外すか、
+  # カスタムチェックを定義する。
   # Allows to set blank redirect URIs for Applications in case Doorkeeper configured
   # to use URI-less OAuth grant flows like Client Credentials or Resource Owner
   # Password Credentials. The option is on by default and checks configured grant
@@ -291,7 +325,7 @@ Doorkeeper.configure do
   #
   # You can completely disable this feature with:
   #
-  # allow_blank_redirect_uri false
+  allow_blank_redirect_uri false
   #
   # Or you can define your custom check:
   #
@@ -330,6 +364,7 @@ Doorkeeper.configure do
   #
   # custom_introspection_response CustomIntrospectionResponder
 
+  # どのようなgrant flowsを有効にするかを文字列の配列で指定する。
   # Specify what grant flows are enabled in array of Strings. The valid
   # strings and the flows they enable are:
   #
@@ -346,7 +381,7 @@ Doorkeeper.configure do
   #   https://datatracker.ietf.org/doc/html/rfc6819#section-4.4.2
   #   https://datatracker.ietf.org/doc/html/rfc6819#section-4.4.3
   #
-  # grant_flows %w[authorization_code client_credentials]
+  grant_flows %w[authorization_code]
 
   # Allows to customize OAuth grant flows that +each+ application support.
   # You can configure a custom block (or use a class respond to `#call`) that must
