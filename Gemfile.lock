@@ -91,6 +91,8 @@ GEM
     devise-i18n-views (0.3.7)
     doorkeeper (5.5.4)
       railties (>= 5)
+    doorkeeper-i18n (5.2.3)
+      doorkeeper (>= 5.2)
     erubi (1.10.0)
     ffi (1.15.5)
     globalid (1.0.0)
@@ -230,6 +232,7 @@ DEPENDENCIES
   devise-i18n
   devise-i18n-views
   doorkeeper (~> 5.5.4)
+  doorkeeper-i18n (~> 5.2.3)
   jbuilder (~> 2.7)
   listen (~> 3.3)
   pg (~> 1.1)

@@ -60,3 +60,4 @@ gem 'devise-i18n'
 gem 'devise-i18n-views'
 
 gem 'doorkeeper', '~> 5.5.4'
+gem 'doorkeeper-i18n', '~> 5.2.3'
